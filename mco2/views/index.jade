@@ -1,0 +1,32 @@
+extends layout
+
+block content
+  .content
+    h1 Internet Movies Database
+    p insert description here
+
+block search
+  .search
+    h3 Search IMDB
+    div 
+      input(id="Movie", type="text", placeholder="Movies / ID / Year")
+      button.btn#Search Retrieve
+
+block data
+  .data
+    h3 Data retrieved from IMDB-ijs Dataset
+    // place table/cards here for data retrieved
+
+
+block movie
+  .movie
+    h3 Movie Information
+    input(id="MovieInfo", type="text", placeholder="Movies Name")
+    input(id="MovieInfo", type="text", placeholder="Movies ID")
+    input(id="MovieInfo", type="text", placeholder="Movies Year")
+    input(id="MovieInfo", type="text", placeholder="Movies Genre")
+    button.btn#Upd Update
+    button.btn#Del Delete
+
+  
+  
