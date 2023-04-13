@@ -7,26 +7,47 @@ block content
 
 block search
   .search
-    h3 Search IMDB
+    h3 Search IMDB By Year
     div 
-      input(id="Movie", type="text", placeholder="Movies / ID / Year")
-      button.btn#Search Retrieve
+      form(action='/movies/search', method="get") 
+        input(id="Movie", type="text", placeholder="Movie's Year", name = "year")
+        button.btn#Search Retrieve
 
 block data
   .data
     h3 Data retrieved from IMDB-ijs Dataset
+    ul 
+      each item in movieList 
+        li 
+          div
+            form(action="/edit/#{item.movie_id}" method='get') 
+              p
+                b Movie ID:  &nbsp;
+                span=item.movie_id
+                b &nbsp; Name: &nbsp;
+                span=item.movie_name 
+                b &nbsp; Year:  &nbsp;
+                span=item.movie_year
+                b &nbsp; Rank:  &nbsp;
+                span=item.movie_rank 
+                &nbsp;
+                &nbsp;
+                button.btn Edit
+                &nbsp;
+            form(action="/delete/#{item.movie_id}", method='post') 
+                button.btn Delete
+              
     // place table/cards here for data retrieved
 
 
 block movie
   .movie
-    h3 Movie Information
-    input(id="MovieInfo", type="text", placeholder="Movies Name")
-    input(id="MovieInfo", type="text", placeholder="Movies ID")
-    input(id="MovieInfo", type="text", placeholder="Movies Year")
-    input(id="MovieInfo", type="text", placeholder="Movies Genre")
-    button.btn#Upd Update
-    button.btn#Del Delete
+    h3 Create New Movie Data
+    form(action="/", method="post") 
+      input(id="MovieInfo", type="text", placeholder="Movies Name", name="name")
+      input(id="MovieInfo", type="text", placeholder="Movies Year", name="year")
+      input(id="MovieInfo", type="text", placeholder="Movies Rank", name="rank")
+      button.btn#Upd Create
 
   
   
