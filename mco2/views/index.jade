@@ -12,6 +12,22 @@ block search
       form(action='/movies/search', method="get") 
         input(id="Movie", type="text", placeholder="Movie's Year", name = "year")
         button.btn#Search Retrieve
+        h3 Choose isolation level
+        p 
+            input(id="uncommitted", type="radio", placeholder="Movies Name", name="isolation" value="READ UNCOMMITTED") 
+            label(for="uncommitted") Read Uncommitted
+            br
+            br
+            input(id="committed", type="radio", placeholder="Movies Year", name="isolation" value="READ COMMITTED") 
+            label(for="committed") Read Committed
+            br
+            br
+            input(id="repeatable", type="radio", placeholder="Movies Year", name="isolation" value="REPEATABLE READ" checked) 
+            label(for="repeatable") Read Repeatable
+            br
+            br
+            input(id="serializable", type="radio", placeholder="Movies Rank", name="isolation" value="SERIALIZABLE") 
+            label(for="serializable") Serializable
 
 block data
   .data
@@ -50,4 +66,6 @@ block movie
       button.btn#Upd Create
 
   
-  
+block isolation
+  .isolation
+    

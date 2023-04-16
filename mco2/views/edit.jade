@@ -2,7 +2,7 @@ doctype html
 html
   head
     title hello
-    link(rel='stylesheet', href='/stylesheets/style.css')
+
 
 body
     block movie
@@ -10,10 +10,25 @@ body
         h3 Edit Movie Data
         form(action="/edit/#{data.movie_id}", method="post") 
             b Movie Name
+                br
                 input(id="MovieInfo", type="text", placeholder="Movies Name", name="name", value="#{data.movie_name}")
+            br
+            br
             b Movie Year
+                br
                 input(id="MovieInfo", type="text", placeholder="Movies Year", name="year", value="#{data.movie_year}")
+            br
+            br
             b Movie Rank
+                br
                 input(id="MovieInfo", type="text", placeholder="Movies Rank", name="rank", value="#{data.movie_rank}")
+            br
+            br
             button.btn#Upd Update
             button.btn#Del Delete
+            h3 With Sleep Function
+            p  
+                input(id="sleep", type="radio", placeholder="Movies Name", name="sleep" value="sleep") 
+                label(for="sleep") With Sleep Function
+                input(id="noSleep", type="radio", placeholder="Movies Name", name="sleep" value="noSleep" checked) 
+                label(for="noSleep") No Sleep Function

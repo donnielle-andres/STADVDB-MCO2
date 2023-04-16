@@ -2,6 +2,13 @@ var express = require('express');
 var router = express.Router();
 var mysql = require('mysql2');
 
+const UNCOMMITTED = "READ UNCOMMITTED";
+const COMMITTED = "READ COMMITTED";
+const REPEATABLE = "REPEATABLE READ";
+const SERIALIZABLE = "SERIALIZABLE";
+
+var isolation = REPEATABLE;
+
 var sqlcon = mysql.createConnection({
   host: "127.0.0.1",
   user: "root",
@@ -28,6 +35,10 @@ var node3 = mysql.createConnection({
   port: '3306',
   connectionLimit: 10
 });
+
+async function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 async function recovery(node, other_node) {
 
@@ -61,6 +72,14 @@ async function recovery(node, other_node) {
 
                   console.log(`recovery instance ${i} updated.`);
                 })
+
+                var logs_sql = `INSERT INTO logs(transaction_id, old_year, movie_id, movie_name, movie_year, movie_rank, transaction_type) VALUES('${result[0].transaction_id}', '${result[0].old_year}', '${result[0].movie_id}', '${result[0].movie_name}', '${result[0].movie_year}', '${result[0].movie_rank}', '${result[0].transaction_type}')`;
+
+
+                node.query(logs_sql, function (err, result) {
+                  if (err) throw err;
+                  console.log('successfully inserted to main node logs');
+                })
               }
               //else if type is delete
               else {
@@ -71,14 +90,15 @@ async function recovery(node, other_node) {
 
                   console.log(`recovery instance ${i} deleted.`);
                 })
+                var logs_sql = `INSERT INTO logs(transaction_id, old_year, movie_id, movie_name, movie_year, movie_rank, transaction_type) VALUES('${result[0].transaction_id}', NULL, '${result[0].movie_id}', NULL, NULL, NULL, '${result[0].transaction_type}')`;
+
+
+                node.query(logs_sql, function (err, result) {
+                  if (err) throw err;
+                  console.log('successfully inserted to main node logs');
+                })
               }
-              var logs_sql = `INSERT INTO logs(transaction_id, old_year, movie_id, movie_name, movie_year, movie_rank, transaction_type) VALUES('${result[0].transaction_id}', NULL, '${result[0].movie_id}', NULL, NULL, NULL, '${result[0].transaction_type}')`;
 
-
-              node.query(logs_sql, function (err, result) {
-                if (err) throw err;
-                console.log('successfully inserted to main node logs');
-              })
             })
 
             currID += 1;
@@ -117,7 +137,7 @@ async function recovery(node, other_node) {
                   }
 
                 }
-                else if (result[0].movie_year >= 1980 && old_year < 1980) {
+                else if (result[0].movie_year >= 1980 && result[0].old_year < 1980) {
 
                   if (node == node3) {
                     node.query(insert_sql, function (err, result) {
@@ -154,6 +174,15 @@ async function recovery(node, other_node) {
                   });
                 }
 
+                var logs_sql = `INSERT INTO logs(transaction_id, old_year, movie_id, movie_name, movie_year, movie_rank, transaction_type) VALUES('${result[0].transaction_id}', '${result[0].old_year}', '${result[0].movie_id}', '${result[0].movie_name}', '${result[0].movie_year}', '${result[0].movie_rank}', '${result[0].transaction_type}')`;
+
+
+                node.query(logs_sql, function (err, result) {
+                  if (err) throw err;
+                  console.log('successfully inserted to node 2 or node 3 logs');
+                })
+
+
 
               }
               //else if type is delete
@@ -174,14 +203,15 @@ async function recovery(node, other_node) {
                     console.log(`recovery instance ${i} deleted.`);
                   })
                 }
+                var logs_sql = `INSERT INTO logs(transaction_id, old_year, movie_id, movie_name, movie_year, movie_rank, transaction_type) VALUES('${result[0].transaction_id}', NULL, '${result[0].movie_id}', NULL, NULL, NULL, '${result[0].transaction_type}')`;
+
+
+                node.query(logs_sql, function (err, result) {
+                  if (err) throw err;
+                  console.log('successfully inserted to node 2 or node 3 logs');
+                })
+
               }
-              var logs_sql = `INSERT INTO logs(transaction_id, old_year, movie_id, movie_name, movie_year, movie_rank, transaction_type) VALUES('${result[0].transaction_id}', '${result[0].old_year}', '${result[0].movie_id}', '${result[0].movie_name}', '${result[0].movie_year}', '${result[0].movie_rank}', '${result[0].transaction_type}')`;
-
-
-              node.query(logs_sql, function (err, result) {
-                if (err) throw err;
-                console.log('successfully inserted to node 2 or node 3 logs');
-              })
 
             })
 
@@ -237,6 +267,7 @@ async function recovery_strategy(main, node2Status, node3Status) {
 function connectSQLMain() {
   var bool = sqlcon.connect(function (err) {
     if (err) {
+      sqlcon.close();
       return false;
     }
     console.log("main node Connected!");
@@ -248,6 +279,7 @@ function connectSQLMain() {
 function connectSQLNode2() {
   var bool = node2.connect(function (err) {
     if (err) {
+      node2.close();
       return false;
     }
     console.log("node 2 Connected!");
@@ -259,6 +291,7 @@ function connectSQLNode2() {
 function connectSQLNode3() {
   var bool = node3.connect(function (err) {
     if (err) {
+      node3.close();
       return false;
     }
     console.log("node 3 Connected!");
@@ -270,7 +303,7 @@ function connectSQLNode3() {
 /* GET home page. */
 router.get('/', async (req, res) => {
 
-  var sql = "SELECT * FROM movies";
+  var sql = `SELECT * FROM movies`;
 
   var mainOnline = false;
   var node2Online = false;
@@ -284,16 +317,21 @@ router.get('/', async (req, res) => {
 
 
   if (mainOnline) {
+    await sqlcon.execute(`SET TRANSACTION ISOLATION LEVEL ${isolation}`);
+    sqlcon.beginTransaction();
     sqlcon.query(sql, function (err, result) {
       if (err) throw err;
       movieList = result;
-
+      sqlcon.commit();
       res.render('index', { title: 'Express', movieList });
 
     });
   }
   else {
-
+    await node2.execute(`SET TRANSACTION ISOLATION LEVEL ${isolation}`);
+    await node3.execute(`SET TRANSACTION ISOLATION LEVEL ${isolation}`);
+    node2.beginTransaction();
+    node3.beginTransaction();
     node2.query(sql, function (err, result) {
       if (err) throw err;
       var movieList = [];
@@ -302,6 +340,8 @@ router.get('/', async (req, res) => {
         if (err) throw err;
         movieList.push.apply(movieList, result);
 
+        node2.commit();
+        node3.commit();
         res.render('index', { title: 'Express', movieList });
 
       });
@@ -384,6 +424,10 @@ router.get('/movies/search/', async (req, res) => {
   node2Online = connectSQLNode2();
   node3Online = connectSQLNode3();
 
+  if (req.query.isolation) {
+    isolation = req.query.isolation;
+  }
+
   await recovery_strategy(mainOnline, node2Online, node3Online);
 
   if (req.query.year == "") {
@@ -395,34 +439,44 @@ router.get('/movies/search/', async (req, res) => {
   }
 
   if (mainOnline) {
+    await sqlcon.execute(`SET TRANSACTION ISOLATION LEVEL ${isolation}`);
+    sqlcon.beginTransaction();
     sqlcon.query(sql, function (err, result) {
       if (err) throw err;
       movieList = result;
-
+      sqlcon.commit();
       res.render('index', { title: 'Express', movieList });
 
     });
   }
   else {
     if (year >= 1980) {
-      node2.query(sql, function (err, result) {
+      await node3.execute(`SET TRANSACTION ISOLATION LEVEL ${isolation}`);
+      node3.beginTransaction();
+      node3.query(sql, function (err, result) {
         if (err) throw err;
         movieList = result;
-
+        node3.commit();
         res.render('index', { title: 'Express', movieList });
 
       });
     }
     else if (year < 1980) {
-      node3.query(sql, function (err, result) {
+      await node2.execute(`SET TRANSACTION ISOLATION LEVEL ${isolation}`);
+      node2.beginTransaction();
+      node2.query(sql, function (err, result) {
         if (err) throw err;
         movieList = result;
-
+        node2.commit();
         res.render('index', { title: 'Express', movieList });
 
       });
     }
     else {
+      await node2.execute(`SET TRANSACTION ISOLATION LEVEL ${isolation}`);
+      await node3.execute(`SET TRANSACTION ISOLATION LEVEL ${isolation}`);
+      node2.beginTransaction();
+      node3.beginTransaction();
       node2.query(sql, function (err, result) {
         if (err) throw err;
         movieList = result;
@@ -430,6 +484,8 @@ router.get('/movies/search/', async (req, res) => {
           if (err) throw err;
           movieList.push(result);
 
+          node2.commit();
+          node3.commit();
           res.render('index', { title: 'Express', movieList });
 
         });
@@ -507,22 +563,206 @@ router.post('/edit/:movie_id', async (req, res) => {
   await recovery_strategy(mainOnline, node2Online, node3Online);
 
   if (mainOnline) {
+
+    await sqlcon.execute(`SET TRANSACTION ISOLATION LEVEL ${isolation}`);
+    sqlcon.beginTransaction();
     sqlcon.query(logs_select_sql, function (err, result) {
       transaction_id = result[0].maxID + 1;
-
-
-
 
       sqlcon.query(old_year_sql, function (err, result) {
         if (err) throw err;
         var old_year = result[0].movie_year;
 
-        sqlcon.query(sql, function (err, result) {
+        sqlcon.query(sql, async (err, result) => {
           if (err) throw err;
+          if (req.body.sleep == 'sleep') {
+            await sleep(10000);
+          }
+
           console.log('successfully updated');
 
-          console.log(old_year);
+          if (data.year < 1980 && old_year >= 1980) {
+            if (node2Online) {
+              node2.beginTransaction();
+              node2.query(insert_sql, function (err, result) {
+                if (err) throw err;
+                console.log('successfully inserted the updated data in node 2');
 
+                node2.commit();
+
+              });
+            }
+            if (node3Online) {
+
+              node3.beginTransaction();
+              node3.query(delete_sql, function (err, result) {
+                if (err) throw err;
+                console.log('successfully deleted preexisting data in node 3');
+
+                node3.commit();
+
+              });
+            }
+          }
+          else if (data.year >= 1980 && old_year < 1980) {
+            if (node3Online) {
+              node3.beginTransaction();
+              node3.query(insert_sql, function (err, result) {
+                if (err) throw err;
+                console.log('successfully inserted the updated data in node 3');
+
+                node3.commit();
+              });
+            }
+            if (node2Online) {
+              node2.beginTransaction();
+              node2.query(delete_sql, function (err, result) {
+                if (err) throw err;
+                console.log('successfully deleted preexisting data in node 2');
+
+                node2.commit();
+              });
+            }
+          }
+
+          else if (data.year < 1980 && node2Online) {
+            node2.beginTransaction();
+
+            node2.query(sql, function (err, result) {
+              if (err) throw err;
+              console.log('successfully updated in node 2');
+              node2.commit();
+            });
+
+          }
+          else if (node3Online) {
+            node3.beginTransaction();
+            node3.query(sql, function (err, result) {
+              if (err) throw err;
+              console.log('successfully updated in node 3');
+
+              node3.commit();
+            });
+          }
+
+
+
+          sqlcon.commit();
+
+        });
+
+        var logs_sql = `INSERT INTO logs(transaction_id, old_year, movie_id, movie_name, movie_year, movie_rank, transaction_type) VALUES('${transaction_id}', '${old_year}', '${movie_id}', '${data.name}', '${data.year}', '${data.rank}', 'UPDATE')`;
+
+        if (mainOnline) {
+          sqlcon.query(logs_sql, function (err, result) {
+            if (err) throw err;
+            console.log('successfully inserted to main node logs');
+          })
+        }
+        if (node2Online) {
+          node2.query(logs_sql, function (err, result) {
+            if (err) throw err;
+            console.log('successfully inserted to node 2 logs');
+          })
+        }
+        if (node3Online) {
+          node3.query(logs_sql, function (err, result) {
+            if (err) throw err;
+            console.log('successfully inserted to node 3 logs');
+          })
+        }
+
+      });
+
+
+
+    })
+  }
+  //main node is not online
+  else {
+
+    node2.query(logs_select_sql, function (err, result) {
+      transaction_id = result[0].maxID + 1;
+      node2.query(old_year_sql, function (err, result) {
+        if (result[0] == undefined) {
+          node3.query(old_year_sql, function (err, result) {
+            old_year = result[0].movie_year;
+
+            if (data.year < 1980 && old_year >= 1980) {
+              if (node2Online) {
+                node2.query(insert_sql, function (err, result) {
+                  if (err) throw err;
+                  console.log('successfully inserted the updated data in node 2');
+
+                });
+              }
+              if (node3Online) {
+                node3.query(delete_sql, function (err, result) {
+                  if (err) throw err;
+                  console.log('successfully deleted preexisting data in node 3');
+
+                });
+              }
+            }
+            else if (data.year >= 1980 && old_year < 1980) {
+              if (node3Online) {
+                node3.query(insert_sql, function (err, result) {
+                  if (err) throw err;
+                  console.log('successfully inserted the updated data in node 3');
+
+                });
+              }
+              if (node2Online) {
+                node2.query(delete_sql, function (err, result) {
+                  if (err) throw err;
+                  console.log('successfully deleted preexisting data in node 2');
+
+                });
+              }
+            }
+
+            else if (data.year < 1980 && node2Online) {
+
+              node2.query(sql, function (err, result) {
+                if (err) throw err;
+                console.log('successfully updated in node 2');
+
+              });
+
+            }
+            else if (node3Online) {
+              node3.query(sql, function (err, result) {
+                if (err) throw err;
+                console.log('successfully updated in node 3');
+
+              });
+            }
+
+            //update logs table
+            var logs_sql = `INSERT INTO logs(transaction_id, old_year, movie_id, movie_name, movie_year, movie_rank, transaction_type) VALUES('${transaction_id}', '${old_year}', '${movie_id}', '${data.name}', '${data.year}', '${data.rank}', 'UPDATE')`;
+
+            if (mainOnline) {
+              sqlcon.query(logs_sql, function (err, result) {
+                if (err) throw err;
+                console.log('successfully inserted to main node logs');
+              })
+            }
+            if (node2Online) {
+              node2.query(logs_sql, function (err, result) {
+                if (err) throw err;
+                console.log('successfully inserted to node 2 logs');
+              })
+            }
+            if (node3Online) {
+              node3.query(logs_sql, function (err, result) {
+                if (err) throw err;
+                console.log('successfully inserted to node 3 logs');
+              })
+            }
+          })
+        }
+        else {
+          old_year = result[0].movie_year;
 
           if (data.year < 1980 && old_year >= 1980) {
             if (node2Online) {
@@ -574,128 +814,42 @@ router.post('/edit/:movie_id', async (req, res) => {
             });
           }
 
-        });
+          //update logs table
+          var logs_sql = `INSERT INTO logs(transaction_id, old_year, movie_id, movie_name, movie_year, movie_rank, transaction_type) VALUES('${transaction_id}', '${old_year}', '${movie_id}', '${data.name}', '${data.year}', '${data.rank}', 'UPDATE')`;
 
-        var logs_sql = `INSERT INTO logs(transaction_id, old_year, movie_id, movie_name, movie_year, movie_rank, transaction_type) VALUES('${transaction_id}', '${old_year}', '${movie_id}', '${data.name}', '${data.year}', '${data.rank}', 'UPDATE')`;
-
-        if (mainOnline) {
-          sqlcon.query(logs_sql, function (err, result) {
-            if (err) throw err;
-            console.log('successfully inserted to main node logs');
-          })
+          if (mainOnline) {
+            sqlcon.query(logs_sql, function (err, result) {
+              if (err) throw err;
+              console.log('successfully inserted to main node logs');
+            })
+          }
+          if (node2Online) {
+            node2.query(logs_sql, function (err, result) {
+              if (err) throw err;
+              console.log('successfully inserted to node 2 logs');
+            })
+          }
+          if (node3Online) {
+            node3.query(logs_sql, function (err, result) {
+              if (err) throw err;
+              console.log('successfully inserted to node 3 logs');
+            })
+          }
         }
-        if (node2Online) {
-          node2.query(logs_sql, function (err, result) {
-            if (err) throw err;
-            console.log('successfully inserted to node 2 logs');
-          })
-        }
-        if (node3Online) {
-          node3.query(logs_sql, function (err, result) {
-            if (err) throw err;
-            console.log('successfully inserted to node 3 logs');
-          })
-        }
-
-      });
-
-
+      })
 
     })
+
+
+
   }
-  //main node is not online
+  if (req.body.sleep == 'sleep') {
+    await sleep(10000);
+    res.redirect('/');
+  }
   else {
-    var transaction_id = node2.query(logs_select_sql, function (err, result) {
-      transaction_id = result[0].maxID + 1;
-      return transaction_id;
-    })
-
-    var old_year = node2.query(old_year_sql, function (err, result) {
-      if (result[0] == undefined) {
-        var old_year = node3.query(old_year_sql, function (err, result) {
-          return result[0].movie_year;
-        })
-        return old_year;
-      }
-      else {
-        return result[0].movie_year;
-      }
-    })
-
-    if (data.year < 1980 && old_year >= 1980) {
-      if (node2Online) {
-        node2.query(insert_sql, function (err, result) {
-          if (err) throw err;
-          console.log('successfully inserted the updated data in node 2');
-
-        });
-      }
-      if (node3Online) {
-        node3.query(delete_sql, function (err, result) {
-          if (err) throw err;
-          console.log('successfully deleted preexisting data in node 3');
-
-        });
-      }
-    }
-    else if (data.year >= 1980 && old_year < 1980) {
-      if (node3Online) {
-        node3.query(insert_sql, function (err, result) {
-          if (err) throw err;
-          console.log('successfully inserted the updated data in node 3');
-
-        });
-      }
-      if (node2Online) {
-        node2.query(delete_sql, function (err, result) {
-          if (err) throw err;
-          console.log('successfully deleted preexisting data in node 2');
-
-        });
-      }
-    }
-
-    else if (data.year < 1980 && node2Online) {
-
-      node2.query(sql, function (err, result) {
-        if (err) throw err;
-        console.log('successfully updated in node 2');
-
-      });
-
-    }
-    else if (node3Online) {
-      node3.query(sql, function (err, result) {
-        if (err) throw err;
-        console.log('successfully updated in node 3');
-
-      });
-    }
-
-    //update logs table
-    var logs_sql = `INSERT INTO logs(transaction_id, old_year, movie_id, movie_name, movie_year, movie_rank, transaction_type) VALUES('${transaction_id}', '${old_year}', '${movie_id}', '${data.name}', '${data.year}', '${data.rank}', 'UPDATE')`;
-
-    if (mainOnline) {
-      sqlcon.query(logs_sql, function (err, result) {
-        if (err) throw err;
-        console.log('successfully inserted to main node logs');
-      })
-    }
-    if (node2Online) {
-      node2.query(logs_sql, function (err, result) {
-        if (err) throw err;
-        console.log('successfully inserted to node 2 logs');
-      })
-    }
-    if (node3Online) {
-      node3.query(logs_sql, function (err, result) {
-        if (err) throw err;
-        console.log('successfully inserted to node 3 logs');
-      })
-    }
+    res.redirect('/');
   }
-
-  res.redirect('/');
 });
 
 router.post('/delete/:movie_id', async (req, res) => {
